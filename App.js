@@ -1,16 +1,16 @@
 import { StatusBar } from "expo-status-bar";
 import { useState, useEffect } from "react";
-import { View, StyleSheet, Dimensions, Text, TouchableWithoutFeedback, Pressable } from "react-native";
+import { View, StyleSheet, Dimensions, Text,TouchableWithoutFeedback } from "react-native";
 import { Accelerometer } from 'expo-sensors';
 import { Image } from "react-native";
 import { Platform } from "react-native";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
-const PLAYER_WIDTH = 80;
-const PLAYER_HEIGHT = 80;
+const PLAYER_WIDTH = 120;
+const PLAYER_HEIGHT = 120;
 
-const BULLET_WIDTH = 10;
-const BULLET_HEIGHT = 20;
+const BULLET_WIDTH = 50;
+const BULLET_HEIGHT = 50;
 
 const BLOCK_WIDTH = 70;
 const BLOCK_HEIGHT = 70;
@@ -19,8 +19,8 @@ export default function App() {
   const [playerX, setPlayerX] = useState((screenWidth - PLAYER_WIDTH) / 2);
   const [bullets, setBullets] = useState([]);
   const [box, setbox] = useState([]);
-  const [gameOver, setGameOver] = useState(false);
   const [roadY, setRoadY] = useState(0);
+  const [count, setCount] = useState(0);
 
 
   useEffect(() => {
@@ -32,8 +32,7 @@ export default function App() {
     }, []);
 
   useEffect(() => {
-    if (gameOver) return; // stop listening when game over
-    Accelerometer.setUpdateInterval(16); // 60Hz
+    Accelerometer.setUpdateInterval(16); // roughly 60Hz
     const subscription = Accelerometer.addListener(({x})=>{
       const move = (Platform.OS === "android" ? -x : x) * 30; // scale factor for sensitivity
       setPlayerX(prevX => {
@@ -44,116 +43,92 @@ export default function App() {
       })
     })
     return () => subscription.remove()
-  }, [gameOver]);
+  }, []);
 
 
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      // update blocks (falling)
-      setbox(prevBox =>
-        prevBox
-          .map(block => ({ ...block, y: block.y - 5 }))
-          .filter(block => {
-            // player bounds (bottom-based)
-            const playerBottom = 20;
-            const playerTop = playerBottom + PLAYER_HEIGHT;
-            const playerLeft = playerX;
-            const playerRight = playerX + PLAYER_WIDTH;
+  const interval = setInterval(() => {
+    setbox(prevBox =>
+      prevBox
+        .map(block => ({ ...block, y: block.y - 5 }))
+        .filter(block => {
 
-            const blockBottom = block.y;
+          // Check collision with bullets
+          const hit = bullets.some(bullet => {
+            const bulletBottom = bullet.y;
+            const bulletLeft = bullet.x;
+            const bulletRight = bullet.x + BULLET_WIDTH;
+
             const blockTop = block.y + BLOCK_HEIGHT;
             const blockLeft = block.x;
             const blockRight = block.x + BLOCK_WIDTH;
 
-            // check collision with player
-            const playerHit = !(
-              playerRight < blockLeft ||
-              blockRight < playerLeft ||
-              playerTop < blockBottom ||
-              blockTop < playerBottom
+            // rectangle collision
+            return (
+              bulletBottom >= block.y &&
+              bulletBottom <= blockTop &&
+              bulletRight >= blockLeft &&
+              bulletLeft <= blockRight
             );
-            if (playerHit) {
-              setGameOver(true);
-              return false; // remove block when it hits player
-            }
+          });
+          
+          // Keep block only if it's on screen and NOT hit
+          return block.y + BLOCK_HEIGHT > 0 && !hit;
+        })
+    );
+    setBullets(prevBullets =>
+    prevBullets
+      .map(bullet => ({ ...bullet, y: bullet.y + 10 }))
+      .filter(bullet => {
+        const hit = box.some(block => {
+          return (
+            bullet.y >= block.y &&
+            bullet.y <= block.y + BLOCK_HEIGHT &&
+            bullet.x + BULLET_WIDTH >= block.x &&
+            bullet.x <= block.x + BLOCK_WIDTH
+          );
+        });
+        if (hit){
+          setCount(prevCount => prevCount + 1);
+        }
+        return bullet.y < screenHeight && !hit;  // ✔ FIXED
+      })
+  );
 
-            // Check collision with bullets
-            const hit = bullets.some(bullet => {
-              const bulletBottom = bullet.y;
-              const bulletLeft = bullet.x;
-              const bulletRight = bullet.x + BULLET_WIDTH;
+  }, 15);
 
-              // rectangle collision between bullet and block
-              return (
-                bulletBottom >= block.y &&
-                bulletBottom <= blockTop &&
-                bulletRight >= blockLeft &&
-                bulletLeft <= blockRight
-              );
-            });
-
-            // Keep block only if it's on screen and NOT hit
-            return block.y + BLOCK_HEIGHT > 0 && !hit;
-          })
-      );
-
-      // update bullets
-      setBullets(prevBullets =>
-        prevBullets
-          .map(bullet => ({ ...bullet, y: bullet.y + 5 }))
-          .filter(bullet => {
-            const hit = box.some(block => {
-              return (
-                bullet.y >= block.y &&
-                bullet.y <= block.y + BLOCK_HEIGHT &&
-                bullet.x + BULLET_WIDTH >= block.x &&
-                bullet.x <= block.x + BLOCK_WIDTH
-              );
-            });
-            return bullet.y < screenHeight && !hit;
-          })
-      );
-
-    }, 15);
-
-    return () => clearInterval(interval);
-  }, [bullets, box, playerX]);
+  return () => clearInterval(interval);
+}, [bullets,box]);
 
 
   const handleBullet = () => {
-    if (gameOver) return; // don't shoot when game over
     const bullet ={
       id: Date.now(),
       x: playerX + (PLAYER_WIDTH - BULLET_WIDTH) / 2,
       y: 20 + PLAYER_HEIGHT,
     }
+    
     setBullets(prevBullets => [...prevBullets, bullet]);
+   
   }
-  const handleRestart = () => {
-    setBullets([]);
-    setbox([]);
-    setPlayerX((screenWidth - PLAYER_WIDTH) / 2);
-    setGameOver(false);
-  }
-
   useEffect(() => {
-    if (gameOver) return; // stop spawning when game over
     const id=setInterval(() => {   
-      const newBox ={
+      const box ={
         id: Date.now(),
         x:Math.random() * (screenWidth - BLOCK_WIDTH),
         y:screenHeight,
       }
-      setbox(prevbox => [...prevbox, newBox]);
+      setbox(prevbox => [...prevbox, box]);
     }, 2000);
     return ()=>clearInterval(id);
-  }, [gameOver]);
+  }, []);
 
   
   return (
     <TouchableWithoutFeedback onPress={handleBullet}>
     <View style={styles.container}>
+      
       <Image
         source={require("./assets/road.png")}
         style={[styles.road, { top: roadY - screenHeight }]}
@@ -164,8 +139,12 @@ export default function App() {
       />
       {
         bullets.map(bullet => (
-          <View key={bullet.id} style={[styles.bullet, { left: bullet.x, bottom: bullet.y }]} />
-        ))
+  <Image
+    key={bullet.id}
+    source={require("./assets/fireball.png")}
+    style={[styles.bulletImage, { left: bullet.x, bottom: bullet.y }]}
+  />
+))
       }
       {
           box.map(box => (
@@ -181,15 +160,7 @@ export default function App() {
         source={require("./assets/player.png")}   // your player image
         style={[styles.playerImage, { left: playerX }]}
       />
-      <Text style={styles.instruction}>Tilt your phone to move</Text>
-      {gameOver && (
-        <View style={styles.gameOverContainer}>
-          <Text style={styles.gameOverText}>GAME OVER</Text>
-          <Pressable style={styles.restartButton} onPress={handleRestart}>
-            <Text style={styles.restartButtonText}>Restart</Text>
-          </Pressable>
-        </View>
-      )}
+      <Text style={styles.instruction}>FireBall Hit's : {count}</Text>
     </View>
     </TouchableWithoutFeedback>
   );
@@ -202,6 +173,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     alignItems: "center",
     paddingBottom: 60,
+
   },
   player: {
     position: "absolute",
@@ -215,9 +187,11 @@ const styles = StyleSheet.create({
   instruction: {
     position: "absolute",
     top: 70,
-    color: "#fff",
+    color: "#ede8e2ff",
     fontFamily: "Courier",
-    fontSize: 14,
+    fontSize: 20,
+    fontWeight: "bold",
+    
   },
   bullet: {
     position: "absolute",
@@ -236,33 +210,12 @@ const styles = StyleSheet.create({
     borderColor: "black",
   },
   gameOverText: {
+    position: "absolute",
+    top: screenHeight / 2 - 40,
     color: "#FFF",
-    fontSize: 32,
+    fontSize: 24,
     fontWeight: "bold",
     fontFamily: "Courier",
-    marginBottom: 16,
-  },
-  gameOverContainer: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.7)",
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 10,
-  },
-  restartButton: {
-    backgroundColor: "#FFF",
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  restartButtonText: {
-    color: "#000",
-    fontSize: 18,
-    fontWeight: "bold",
   },
   vehicle: {
   position: "absolute",
@@ -280,6 +233,12 @@ const styles = StyleSheet.create({
   width: screenWidth,
   height: screenHeight,
   resizeMode: "stretch",
+},
+bulletImage: {
+  position: "absolute",
+  width: BULLET_WIDTH,
+  height: BULLET_HEIGHT,
+  resizeMode: "contain",
 },
 
 });
